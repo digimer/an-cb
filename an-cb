@@ -1,0 +1,178 @@
+#!/usr/bin/perl
+#
+# Author:   Digimer (digimer@alteeve.com)
+# Version:  0.1.0
+# Released: 2012-01-22
+# License:  GPL v2+
+
+use strict;
+use warnings;
+use IO::Handle;
+
+my $conf={
+	'system'	=>	{
+		debug		=>	1,
+		config		=>	"./an-cb.conf",
+	},
+	parameter	=>	{
+		node		=>	{
+			redundancy	=>	2,
+			max_count	=>	16,
+			max_ram		=>	0,
+			max_cpu		=>	0,
+		},
+		host		=>	{
+			cpu		=>	1,
+			ram		=>	2,
+		},
+	},
+	vm		=>	{
+		max		=>	{
+			ram		=>	0,
+			cpu		=>	0,
+		},
+		total		=>	{
+			highload_cpu	=>	0,
+			ram		=>	0,
+			hdd		=>	0,
+			ssd		=>	0,
+		},
+	},
+};
+read_conf($conf);
+
+calculate_requirements($conf);
+
+exit(0);
+
+###############################################################################
+# Functions                                                                   #
+###############################################################################
+
+sub calculate_requirements
+{
+	my ($conf)=@_;
+	
+	# Build an os name to ID map.
+	foreach my $os_id (sort {$a cmp $b} keys %{$conf->{os}})
+	{
+		my $ref=$conf->{os}{$os_id}{'ref'};
+		$conf->{os_ref}{$ref}=$os_id;
+		#print "Mapping: [$ref] -> [$conf->{os_ref}{$ref}]\n";
+	}
+	
+	foreach my $node_id (sort {$a cmp $b} keys %{$conf->{vm}})
+	{
+		next if $node_id !~ /^\d+$/;
+		my $os=$conf->{vm}{$node_id}{os};
+		my $os_id=$conf->{os_ref}{$os};
+		print "VM: [$conf->{vm}{$node_id}{desc}] ($conf->{vm}{$node_id}{name})\n";
+		print " - High Load VM!\n" if $conf->{vm}{$node_id}{highload};
+		die "[ ERROR ] - Undefined operating system. OS reference: [$os] not found.\n" if not defined $os_id;
+		print " - OS: [$conf->{os}{$os_id}{name}] ($os)\n";
+		print " - Cores: [$conf->{vm}{$node_id}{cpu}], RAM: [$conf->{vm}{$node_id}{ram} GiB], HDD: [$conf->{vm}{$node_id}{hdd} GB], SSD: [$conf->{vm}{$node_id}{ssd}]\n";
+		print "\n";
+		
+		# Maximums
+		$conf->{vm}{max}{ram}=$conf->{vm}{$node_id}{ram} if $conf->{vm}{$node_id}{ram} > $conf->{vm}{max}{ram};
+		$conf->{vm}{max}{cpu}=$conf->{vm}{$node_id}{cpu} if $conf->{vm}{$node_id}{cpu} > $conf->{vm}{max}{cpu};
+	}
+	$conf->{parameter}{host}{ram}+=$conf->{vm}{max}{ram};
+	$conf->{parameter}{host}{cpu}+=$conf->{vm}{max}{cpu};
+	
+	print "Node RAM: [$conf->{parameter}{host}{ram}] ($conf->{vm}{max}{ram}), CPU: [$conf->{parameter}{host}{cpu}] ($conf->{vm}{max}{cpu})\n";
+	
+	return(0);
+}
+
+# This cleanly exits the agent.
+sub do_exit
+{
+	my ($conf, $exit_status)=@_;
+	$exit_status=9 if not defined $exit_status;
+	
+	exit ($exit_status);
+}
+
+# Read in the config file.
+sub read_conf
+{
+	my ($conf)=@_;
+	$conf={} if not $conf;
+	
+	# Read in the configuration file.
+	my $read=IO::Handle->new();
+	my $shell_call="$conf->{'system'}{config}";
+	#print print __LINE__."; Shell call: [$shell_call]\n" if $conf->{'system'}{debug};
+	open ($read, "<$shell_call") or die "Failed to read: [$shell_call], error was: $!\n";
+	while (<$read>)
+	{
+		chomp;
+		my $line=$_;
+		next if not $line;
+		next if $line !~ /=/;
+		$line=~s/^\s+//;
+		$line=~s/\s+$//;
+		next if $line =~ /^#/;
+		next if not $line;
+		my ($var, $val)=(split/=/, $line, 2);
+		$var=~s/^\s+//;
+		$var=~s/\s+$//;
+		$val=~s/^\s+//;
+		$val=~s/\s+$//;
+		next if (not $var);
+		#print __LINE__."; Storing: [$var] = [$val]\n" if $conf->{'system'}{debug};
+		_make_hash_reference($conf, $var, $val);
+	}
+	$read->close();
+	
+	return (0);
+}
+
+### Contributed by Shaun Fryer and Viktor Pavlenko by way of TPM.
+# This is a helper to the below '_make_hash_reference' function. It is called
+# each time a new string is to be created as a new hash key in the passed hash
+# reference.
+sub _add_hash_reference
+{
+	my $href1=shift;
+	my $href2=shift;
+	
+	for my $key (keys %$href2)
+	{
+		if (ref $href1->{$key} eq 'HASH')
+		{
+			_add_hash_reference($href1->{$key}, $href2->{$key});
+		}
+		else
+		{
+			$href1->{$key}=$href2->{$key};
+		}
+	}
+}
+
+### Contributed by Shaun Fryer and Viktor Pavlenko by way of TPM.
+# This takes a string with double-colon seperators and divides on those
+# double-colons to create a hash reference where each element is a hash key.
+sub _make_hash_reference
+{
+	my $href=shift;
+	my $key_string=shift;
+	my $value=shift;
+	
+	my $chomp_root=0;
+	if ($chomp_root) { $key_string=~s/\w+:://; }
+	
+	my @keys = split /::/, $key_string;
+	my $last_key = pop @keys;
+	my $_href = {};
+	$_href->{$last_key}=$value;
+	while (my $key = pop @keys)
+	{
+		my $elem = {};
+		$elem->{$key} = $_href;
+		$_href = $elem;
+	}
+	_add_hash_reference($href, $_href);
+}
+

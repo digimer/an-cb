@@ -1,0 +1,9 @@
+Program: an-cb - AN!ClusterBuilder
+Author:  digimer (digimer@alteeve.com)
+Date:    2012-01-22
+Version: 0.1.0
+License: GPL v2.0+
+
+This takes a list of virtual machines, a defined redundancy and generates a 
+list of how many nodes you will need along with the "cluster.conf" 
+configuration file.
