@@ -80,7 +80,7 @@ sub calculate_requirements
 	$conf->{parameter}{host}{ram}+=$conf->{vm}{max}{ram};
 	$conf->{parameter}{host}{cpu}+=$conf->{vm}{max}{cpu};
 	
-	print "Node RAM: [$conf->{parameter}{host}{ram}] ($conf->{vm}{max}{ram}), CPU: [$conf->{parameter}{host}{cpu}] ($conf->{vm}{max}{cpu})\n";
+	print "Per node minimum RAM: [$conf->{parameter}{host}{ram}] ($conf->{vm}{max}{ram}), CPU cores: [$conf->{parameter}{host}{cpu}] ($conf->{vm}{max}{cpu})\n";
 	
 	return(0);
 }
